@@ -2,7 +2,7 @@
 '''
 General validation functions
 
-Copyright (C) 2025 Jason Piszcyk
+Copyright (C) 2026 Jason Piszcyk
 Email: Jason.Piszcyk@gmail.com
 
 This program is free software: you can redistribute it and/or modify

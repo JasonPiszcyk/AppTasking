@@ -2,7 +2,7 @@
 '''
 The Constants used for Testing
 
-Copyright (C) 2025 Jason Piszcyk
+Copyright (C) 2026 Jason Piszcyk
 Email: Jason.Piszcyk@gmail.com
 
 All rights reserved.
@@ -40,6 +40,32 @@ suitability for any particular purpose.
 #
 # Constants
 #
+# Different data type to try out
+DATA_SET = {
+    "String": { "type": str, "value": "A string to be stored in shared mem" },
+    "Integer": { "type": int, "value": 100 },
+    "Float": { "type": float, "value": 3.141 },
+    "Dict": { 
+        "type": dict,
+        "value": {
+            "value_string": "a string stored in the dict",
+            "value_int": 100
+        }
+    },
+    "List": {
+        "type": list,
+        "value": [ "string in list", 8, "another string" ]
+    }
+}
+
+DATA_DICT = {
+    "type": dict,
+    "value": {
+        "value_string": "a string stored in the dict",
+        "value_int": 100
+    }
+}
+
 
 #
 # Global Variables

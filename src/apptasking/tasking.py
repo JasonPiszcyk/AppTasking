@@ -2,7 +2,7 @@
 '''
 AppTasking - Tasking Class
 
-Copyright (C) 2025 Jason Piszcyk
+Copyright (C) 2026 Jason Piszcyk
 Email: Jason.Piszcyk@gmail.com
 
 This program is free software: you can redistribute it and/or modify
@@ -29,18 +29,19 @@ from __future__ import annotations
 # Shared variables, constants, etc
 
 # System Modules
-import multiprocessing
-import multiprocessing.synchronize
 import threading
 import queue
+import multiprocessing
+import multiprocessing.synchronize
 from applogging.logging import get_logger, init_console_logger
 
 # Local app modules
 from apptasking.task_wrapper import task_wrapper, get_default_task_info
+import apptasking.tasking_ipc as tasking_ipc
 
 # Imports for python variable type hints
-from typing import Callable
-from apptasking.typing import TaskType_Type, ProcessMethod_Type, TaskStatus
+from typing import Callable, get_args
+from apptasking.typing import TaskType_Type, TaskStatus
 
 
 ###########################################################################
@@ -64,7 +65,7 @@ DEFAULT_LOGGER_NAME = "AppTasking"
 
 ###########################################################################
 #
-# DataStoreMem Class Definition
+# Tasking Class Definition
 #
 ###########################################################################
 class Tasking():
@@ -81,7 +82,6 @@ class Tasking():
     def __init__(
             self,
             task_type: TaskType_Type = "thread",
-            process_method: ProcessMethod_Type = "spawn",
             logger_name: str = "",
             logger_level: str = "CRITICAL"
     ):
@@ -91,9 +91,6 @@ class Tasking():
         Args:
             task_type (str): The type of task ("thread", "process")
                 to be created and managed by this instance
-            process_method (str): When task_type is "process", specify the
-                method to created new processes. Valid values are "spawn",
-                "fork", "forkserver".
             logger_name (str): The name of the logger to use.  If empty (or
                 not a string) then a logger will be created to log to the
                 console
@@ -105,18 +102,16 @@ class Tasking():
             None
 
         Raises:
-            None
+            AssertionError:
+                When task_type is not valid
         '''
-        assert task_type in TaskType_Type, (
-            f"task_type must be one of {TaskType_Type}"
-        )
-        assert process_method in ProcessMethod_Type, (
-            f"process_method must be one of {ProcessMethod_Type}"
+        assert task_type in get_args(TaskType_Type), (
+            f"task_type must be one of {get_args(TaskType_Type)}"
         )
 
         # Private Attributes
         self._task_type = task_type
-        self._context = multiprocessing.get_context(method=process_method)
+        self._context = multiprocessing.get_context(method="spawn")
 
         # Configure Logging
         if isinstance(logger_name, str) and logger_name:
@@ -141,15 +136,6 @@ class Tasking():
         return self._task_type
 
 
-    #
-    # process_method
-    #
-    @property
-    def process_method(self) -> str:
-        ''' The method used when creating new processes '''
-        return self._context.get_start_method()
-
-
     ###########################################################################
     #
     # Inter Process/Thread Communications
@@ -169,19 +155,10 @@ class Tasking():
             Event: An event
 
         Raises:
-            TypeError:
-                When task_type is not valid
+            None
         '''
         self._logger.debug(f"Creating event")
-
-        if self._task_type == "thread":
-            return threading.Event()
-
-        elif self._task_type == "process":
-            return multiprocessing.Event()
-
-        else:
-            raise TypeError("task_type is invalid")
+        return tasking_ipc._create_event(task_type=self._task_type)
 
 
     #
@@ -198,19 +175,10 @@ class Tasking():
             Lock: A lock
 
         Raises:
-            TypeError:
-                When task_type is not valid
+            None
         '''
         self._logger.debug(f"Creating lock")
-
-        if self._task_type == "thread":
-            return threading.Lock()
-
-        elif self._task_type == "process":
-            return multiprocessing.Lock()
-
-        else:
-            raise TypeError("task_type is invalid")
+        return tasking_ipc._create_lock(task_type=self._task_type)
 
 
     #
@@ -236,27 +204,15 @@ class Tasking():
             Barrier: A Barrier
 
         Raises:
-            TypeError:
-                When task_type is not valid
+            None
         '''
         self._logger.debug(f"Creating barrier")
-
-        if self._task_type == "thread":
-            return threading.Barrier(
-                parties=parties,
-                action=action,
-                timeout=timeout
-            )
-
-        elif self._task_type == "process":
-            return multiprocessing.Barrier(
-                parties=parties,
-                action=action,
-                timeout=timeout
-            )
-
-        else:
-            raise TypeError("task_type is invalid")
+        return tasking_ipc._create_barrier(
+            task_type=self._task_type,
+            parties=parties,
+            action=action,
+            timeout=timeout
+        )
 
 
     #
@@ -276,15 +232,7 @@ class Tasking():
             None
         '''
         self._logger.debug(f"Creating queue")
-
-        if self._task_type == "thread":
-            return queue.Queue()
-
-        elif self._task_type == "process":
-            return multiprocessing.Queue()
-
-        else:
-            raise TypeError("task_type is invalid")
+        return tasking_ipc._create_queue(task_type=self._task_type)
 
 
     ###########################################################################
@@ -370,6 +318,8 @@ class Tasking():
         _kwargs = {
             "start_func": start_func,
             "start_kwargs": start_kwargs,
+            "start_event": _start_event,
+            "stop_event": _stop_event,
             "logger_name": self._logger.name,
         }
 

@@ -1,7 +1,7 @@
 # AppTasking
 Copyright (c) 2026 Jason Piszcyk
 
-Applications Components - Tasking and Multiprocessing
+Applications Components - Tasking
 
 <!-- 
 Not yet Published to PyPi

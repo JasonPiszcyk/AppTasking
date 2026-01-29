@@ -3,7 +3,7 @@
 Task Wrapper - wrapper to run the task function, to allow us to capture
 state and result information
 
-Copyright (C) 2025 Jason Piszcyk
+Copyright (C) 2026 Jason Piszcyk
 Email: Jason.Piszcyk@gmail.com
 
 This program is free software: you can redistribute it and/or modify
@@ -32,9 +32,10 @@ from __future__ import annotations
 # System Modules
 import sys
 import traceback
-# from threading import get_native_id
-# from multiprocessing import current_process
-from applogging.logging import get_logger
+import threading
+import multiprocessing
+import multiprocessing.synchronize
+from applogging.logging import get_logger, init_console_logger
 
 # Local app modules
 # from appcore.typing import TaskStatus
@@ -42,7 +43,7 @@ from applogging.logging import get_logger
 
 # Imports for python variable type hints
 from typing import Any, Callable
-from apptasking.typing import TaskType_Type, ProcessMethod_Type, TaskStatus
+from apptasking.typing import TaskStatus
 
 # from threading import Event as EventType
 # from logging import Handler as HandlerType
@@ -62,7 +63,7 @@ from apptasking.typing import TaskType_Type, ProcessMethod_Type, TaskStatus
 #
 # Constants
 #
-
+DEFAULT_LOGGER_NAME = "AppTasking_TaskWrapper"
 
 #
 # Global Variables
@@ -110,6 +111,12 @@ def get_default_task_info() -> dict:
 def task_wrapper(
         start_func: Callable | None = None,
         start_kwargs: dict = {},
+        start_event: (
+                multiprocessing.synchronize.Event | threading.Event | None
+            ) = None,
+        stop_event: (
+                multiprocessing.synchronize.Event | threading.Event | None
+            ) = None,
         logger_name: str = ""
 ) -> None:
     '''
@@ -127,10 +134,19 @@ def task_wrapper(
         None
     '''
     # Get the logger
-    _logger = get_logger(name=logger_name)
+    if isinstance(logger_name, str) and logger_name:
+        _logger = get_logger(name=logger_name)
+
+    else:
+        _logger = init_console_logger(name=DEFAULT_LOGGER_NAME)
+        _logger.setLevel(level="WARNING")
 
     # Got here - so let the caller know the task has started
-    # if start_event: start_event.set()
+    if isinstance(
+        start_event,
+        (multiprocessing.synchronize.Event, threading.Event)
+    ):
+        start_event.set()
 
     _info = get_default_task_info()
 
@@ -154,8 +170,12 @@ def task_wrapper(
                 if _exc_info[1]:
                     _info["exception_desc"] = str(_exc_info[1])
 
-    # Set the event to free other threads/processes
-    # if stop_event: stop_event.set()
+    # Set the stop event
+    if isinstance(
+        stop_event,
+        (multiprocessing.synchronize.Event, threading.Event)
+    ):
+        stop_event.set()
 
 
 ###########################################################################

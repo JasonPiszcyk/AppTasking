@@ -3,26 +3,26 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "appnetcomms"
-version = "1.0.0
+name = "apptasking"
+version = "1.0.0"
 authors = [
   { name="Jason Piszcyk", email="Jason.Piszcyk@gmail.com" },
 ]
-description = "Application Components - Network Communications"
+description = "Application Components - Tasking"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
+
 dependencies = [
   "pytest",
-  "crypto_tools @ git+https://github.com/JasonPiszcyk/CryptoTools",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/JasonPiszcyk/AppNetComms"
-"Bug Tracker" = "https://github.com/JasonPiszcyk/AppNetComms/issues"
+"Homepage" = "https://github.com/JasonPiszcyk/AppTasking"
+"Bug Tracker" = "https://github.com/JasonPiszcyk/AppTasking/issues"
 
 [tool.pytest.ini_options]
 pythonpath = [
