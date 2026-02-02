@@ -139,7 +139,7 @@ def task_wrapper(
 
     else:
         _logger = init_console_logger(name=DEFAULT_LOGGER_NAME)
-        _logger.setLevel(level="WARNING")
+        _logger.setLevel(level="CRITICAL")
 
     # Got here - so let the caller know the task has started
     if isinstance(

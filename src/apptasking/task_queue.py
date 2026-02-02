@@ -182,7 +182,7 @@ class TaskQueue():
 
         else:
             self._logger = init_console_logger(name=DEFAULT_LOGGER_NAME)
-            self._logger.setLevel(level="WARNING")
+            self._logger.setLevel(level="CRITICAL")
 
         # Attributes
         self._message_handler = None
@@ -374,7 +374,7 @@ class TaskQueue():
             TypeError
                 When the task queue message frame is not valid
             AttributError
-                When am invalid message type is received
+                When an invalid message type is received
         '''
         # Get a message from the queue
         _frame = self._get_frame(block=block, timeout=timeout)

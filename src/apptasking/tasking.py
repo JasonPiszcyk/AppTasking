@@ -220,7 +220,7 @@ class Tasking():
     #
     def Queue(self) -> multiprocessing.Queue | queue.Queue:
         '''
-        Create a Queue suitable for the task_type
+        Create a standard FIFO Queue suitable for the task_type
 
         Args:
             None

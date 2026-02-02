@@ -16,9 +16,15 @@ Not yet Published to PyPi
 ## Features
 
 **AppTasking** consists of a number of sub-modules, being:
-- Multiprocessing
-  - A generalised Task interface proving multiprocessing via Process and Threads
+- [Tasking](#tasking-usage)
+  - A generalised Task interface proving multiprocessing via Processes and Threads
     - Task Lifecycle management including starting, stopping and watchdog processing to ensure task state
+- [Task Queueing](#queueing-usage)
+  - Extension to a FIFO Queue - Can be created for use with processes and thread, or threads only.
+  - Implements basic message framing to allow for different internal message types
+  - Keepalives implemented to ensure Queues can remain usuable over extended periods of time
+  - Implements a standard listener
+
 
 ## Installation
 
@@ -43,52 +49,75 @@ Python >= 3.8
 
 ## Usage
 
-### <a id="shared-mem-usage"></a>Shared Mem
+### <a id="tasking-usage"></a>Tasking
 
-#### *class* AppTasking.**Tasking**(*task_type="thread", process_method="spawn", logger_name="", logger_level="CRITICAL"*)
+#### *class* AppTasking.**Tasking**(*task_type="thread", logger_name="", logger_level="CRITICAL"*)
 
 | Argument | Description |
 | - | - |
-| **task_type** (str) | The type of task ("thread", "process") to be created and managed by this instance. Default = "thread" |
-| **process_method** (str) | When task_type is "process", specify the method to created new processes. Valid values are "spawn", "fork", "forkserver". Default = "spawn". For more details, see: https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods |
+| **task_type** (str) | The type of tasks ("thread", "process") to be created and managed by this instance. Default = "thread" |
 | **logger_name** (str) | The name of the logger to use.  If empty (or not a string) then a logger will be created to log to the console |
 | **logger_level** (str) | If no logger name is provided, the created logger will be set to log events at or above this level (default = "CRITICAL") |
 
 | Property | Description |
 | - | - |
-| **name** (str) [ReadOnly] | The name of the item/shared memory segment |
-| **size** (str) [ReadOnly] | The size of the shared memory segment (which maybe larger than the requested size when it was created) |
+| **task_type** (str) [ReadOnly] | The task type managed by this instance |
 
 
-**open()**
+### <a id="queueing-usage"></a>Task Queueing
 
-> Connect to the shared memory segment (if is has been closed) or create a new segment (if it has never been created or has been unlinked). This is called automatically when the instance is created.
+#### *class* AppTasking.**TaskQueue**(*task_type="thread", logger_name=""*)
 
+| Argument | Description |
+| - | - |
+| **task_type** (str) | The type of tasks ("thread", "process") to be supported by this Queuing instance. "process" works with both threads and process so is safer, but has more overhead. Default = "process" |
+| **logger_name** (str) | The name of the logger to use.  If empty (or not a string) then a logger will be created to log to the console |
 
-**close()**
-
-> Disconnect from shared memory segment.
-
-
-**delete()**
-
-> Disconnect from shared memory segment and delete it. The segment will no longer be accessible for remote processes.
-
-
-**get()**
-> Get the raw value (in bytes) from the shared memory segment.
+| Property | Description |
+| - | - |
+| **task_type** (str) [ReadOnly] | The task type supported by this instance |
+| **listener_running** (bool) [ReadOnly] | Property indicating if the listener is running |
 
 
-**set(** value=b"" **)**
+**put(** item=None, block=True, timeout=None **)**
 
-> Store a value in the shared memory segment. The segment is locked during the write of the value.
+> Put a message on the queue.
 
 > | Argument | Description |
 > | - | - |
-> | **value** (bytes) | The raw value, in bytes, to store in the shared memory segment |
+> | **item** (Any) | The data to be sent |
+> | **block** (bool) | If True block until message can be placed on queue. If false, return immediately and raise exception (#queue.full#) on error. |
+> | **timeout** (float | None) | If block is True, time (in seconds) to block before raising exception. |
 
 
+**get(** block=True, timeout=None **)**
 
+> Return the item previously placed on the queue.
+
+> | Argument | Description |
+> | - | - |
+> | **block** (bool) | If True block until message is retrieved. If false, return immediately and raise exception (#queue.empty#) if no message found. |
+> | **timeout** (float | None) | If block is True, time (in seconds) to block before raising exception. |
+
+
+**cleanup()**
+
+> Remove all messages from the queue.
+
+
+**listener(** message_handler=None, keepalive_interval=0 **)**
+
+> Listen for messages on the queue and hand off to the message_handler when they arrive.
+
+> | Argument | Description |
+> | - | - |
+> | **message_handler** (Callable | None) | Callable to process the received message. The message handler should accept a single parameter - #item# - The data retrieved from the queue. No return value is expected from the message handler. |
+> | **keepalive_interval** (int) | Interval within which a keepalive or other message must be received. If 0, defaults to MAX_KEEPLAIVE_INTERVAL. |
+
+
+**listener_stop()**
+
+> Stop the listener.
 
 
 
