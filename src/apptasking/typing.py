@@ -56,6 +56,7 @@ TaskType_Type = Literal["thread", "process"]
 class TaskStatus(enum.Enum):
     UNKNOWN         = "Unknown"
     NOT_STARTED     = "Not Started"
+    NOT_RUNNABLE    = "Not Runnable"
     RUNNING         = "Running"
     ERROR           = "Error"
     COMPLETED       = "Completed"

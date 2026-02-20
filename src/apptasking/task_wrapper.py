@@ -38,16 +38,11 @@ import multiprocessing.synchronize
 from applogging.logging import get_logger, init_console_logger
 
 # Local app modules
-# from appcore.typing import TaskStatus
-# from appcore.appcore_base import AppCoreModuleBase
+from apptasking.task_queue import TaskQueue
 
 # Imports for python variable type hints
 from typing import Any, Callable
 from apptasking.typing import TaskStatus
-
-# from threading import Event as EventType
-# from logging import Handler as HandlerType
-# from appcore.typing import LoggingLevel
 
 
 ###########################################################################
@@ -72,36 +67,6 @@ DEFAULT_LOGGER_NAME = "AppTasking_TaskWrapper"
 
 ###########################################################################
 #
-# Helper Functions
-#
-###########################################################################
-#
-# get_default_task_info
-#
-def get_default_task_info() -> dict:
-    '''
-    Return a dict with the default task information
-
-    Args:
-        None
-
-    Returns:
-        dict: The default task information
-
-    Raises:
-        None
-    '''
-    return {
-        "status": TaskStatus.NOT_STARTED.value,
-        "return_value": None,
-        "exception_name": "",
-        "exception_desc": "",
-        "exception_stack": ""
-    }
-
-
-###########################################################################
-#
 # Task Wrapper
 #
 ###########################################################################
@@ -109,6 +74,8 @@ def get_default_task_info() -> dict:
 # task_wrapper
 #
 def task_wrapper(
+        watchdog_queue: TaskQueue | None = None,
+        task_id: str = "",
         start_func: Callable | None = None,
         start_kwargs: dict = {},
         start_event: (
@@ -120,19 +87,28 @@ def task_wrapper(
         logger_name: str = ""
 ) -> None:
     '''
-    Wrapper to run a task, and store result information
+    Wrapper to run a task, and update result information
 
     Args:
+        watchdog_queue (TaskQueue): Queue to communicate to the watchdog
+        task_id (str): ID of the task
         start_func (Callable): Callable to run in the new thread/process
         start_kwargs (dict): Arguments to pass to the start function
+        start_event (Event): Event to be set when task is running
+        stop_event (Event): Event to be set when task is finished
         logger_name (str): The name of the logger to use.
 
     Returns:
         None
 
     Raises:
-        None
+        AssertionError:
+            When watchdog queue is not a TaskQueue
     '''
+    assert isinstance(watchdog_queue, TaskQueue), (
+        "watchdog_queue must be a TaskQueue"
+    )
+
     # Get the logger
     if isinstance(logger_name, str) and logger_name:
         _logger = get_logger(name=logger_name)
@@ -141,14 +117,25 @@ def task_wrapper(
         _logger = init_console_logger(name=DEFAULT_LOGGER_NAME)
         _logger.setLevel(level="CRITICAL")
 
+    # The task status info
+    _info = {
+        "id": task_id,
+        "status": TaskStatus.RUNNING.value,
+        "return_value": None,
+        "exception_name": "",
+        "exception_desc": "",
+        "exception_stack": ""
+    }
+
+    # Send the status to the watchdog
+    watchdog_queue.put(item=_info)
+
     # Got here - so let the caller know the task has started
     if isinstance(
         start_event,
         (multiprocessing.synchronize.Event, threading.Event)
     ):
         start_event.set()
-
-    _info = get_default_task_info()
 
     if callable(start_func):
         # Run the start function, capturing any exceptions and the return value
@@ -169,6 +156,12 @@ def task_wrapper(
                     _info["exception_name"] = str(_exc_info[0].__name__)
                 if _exc_info[1]:
                     _info["exception_desc"] = str(_exc_info[1])
+
+    else:
+        _info["status"]= TaskStatus.NOT_RUNNABLE.value
+
+    # Send the status to the watchdog
+    watchdog_queue.put(item=_info)
 
     # Set the stop event
     if isinstance(

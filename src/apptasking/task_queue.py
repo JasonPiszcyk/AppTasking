@@ -263,9 +263,9 @@ class TaskQueue():
 
 
     #
-    # _get_frame
+    # get_frame
     #
-    def _get_frame(
+    def get_frame(
             self,
             block: bool = True,
             timeout: float | None = None
@@ -352,6 +352,54 @@ class TaskQueue():
 
 
     #
+    # put_keepalive
+    #
+    def put_keepalive(self):
+        '''
+        Put a keepalive on the queue
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None
+        '''
+        # Put a message on the queue with a type of 'DATA'
+        self._put_frame(
+            message_type=MessageType.LISTENER_KEEPALIVE,
+            item=MessageType.LISTENER_KEEPALIVE.value,
+            block=False
+        )
+
+
+    #
+    # put_quit
+    #
+    def put_quit(self):
+        '''
+        Put a quit message on the queue
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None
+        '''
+        # Put a message on the queue with a type of 'DATA'
+        self._put_frame(
+            message_type=MessageType.LISTENER_EXIT,
+            item=MessageType.LISTENER_EXIT.value,
+            block=False
+        )
+
+
+    #
     # get
     #
     def get(
@@ -377,7 +425,7 @@ class TaskQueue():
                 When an invalid message type is received
         '''
         # Get a message from the queue
-        _frame = self._get_frame(block=block, timeout=timeout)
+        _frame = self.get_frame(block=block, timeout=timeout)
 
         # Confirm the message is in the correct format
         if not isinstance(_frame, TaskQueue_Frame):
@@ -478,15 +526,16 @@ class TaskQueue():
 
         self._listener_running = True
         _timed_out_previous = False
+        _keepalive_interval_exceeded = False
+
         while self._listener_running:
             _frame = None
-            _keepalive_interval_exceeded = False
 
             try:
                 # Only wait for half the keepalive interval
                 # If it times out twice in a row, messages are NOT being
                 # processed
-                _frame = self._get_frame(
+                _frame = self.get_frame(
                     block=True,
                     timeout=self._keepalive_interval / 2
                 )

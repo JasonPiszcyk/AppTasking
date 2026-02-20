@@ -30,13 +30,21 @@ from __future__ import annotations
 
 # System Modules
 import threading
-import uuid
 
 from appdatastore.mem import DataStoreMem
 from applogging.logging import get_logger, init_console_logger
+from appcore.helpers import timestamp
+import queue
 
 # Local app modules
-from apptasking.task_queue import TaskQueue
+from apptasking.task_queue import (
+    TaskQueue,
+    TaskQueue_Frame,
+    MessageType,
+    MAX_KEEPALIVE_INTERVAL
+)
+from task_task import TaskTask
+import apptasking.tasking_ipc as tasking_ipc
 
 # Imports for python variable type hints
 # from typing import Any
@@ -60,7 +68,6 @@ DEFAULT_CHECK_INTERVAL = 30.0
 
 DS_PREFIX = "AppTasking.Watchdog."
 
-JOIN_TIMEOUT = 5.0
 SHUTDOWN_TIMEOUT = 5.0
 
 #
@@ -105,7 +112,7 @@ class Watchdog():
 
         Raises:
             AssertionError:
-                When interval is not a postive number
+                When interval is not a positive number
         '''
         assert isinstance(interval, float), "interval must be a number"
         assert interval > 0, "interval must be positive"
@@ -121,17 +128,46 @@ class Watchdog():
         # Private Attributes
         self._memds = DataStoreMem(security="low")
         self._queue = TaskQueue(task_type="process")
-        self._interval = interval
+
+        if interval < 1:
+            self._interval = 1
+
+        elif interval > MAX_KEEPALIVE_INTERVAL:
+            self._interval = MAX_KEEPALIVE_INTERVAL
+
+        else:
+            self._interval = interval
 
         # Start the thread
         self._watchdog_thread = threading.Thread(
-            target=task_wrapper,
+            target=self.loop,
             kwargs={},
-            name=name
+            name=f"Watchdog ()"
         )
         self._watchdog_thread.start()
 
         # Attributes
+        self._task_dict = {}
+        self._task_dict_lock = tasking_ipc._create_lock(task_type="thread")
+
+
+    #
+    # __del__
+    #
+    def __del__(self):
+        '''
+        Called when instance is destroyed
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None
+        '''
+        self.cleanup()
 
 
     ###########################################################################
@@ -150,9 +186,54 @@ class Watchdog():
 
     ###########################################################################
     #
+    # Cleanup
+    #
+    ###########################################################################
+    #
+    # cleanup
+    #
+    def cleanup(self):
+        '''
+        Perform any shutdown of the watchdog
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None
+        '''
+        # Clean up the thread
+        if isinstance(self._watchdog_thread, threading.Thread):
+            pass
+
+
+    ###########################################################################
+    #
     # The watchdog processing
     #
     ###########################################################################
+    #
+    # maintenance
+    #
+    def maintenance(self):
+        '''
+        The watchdog maintenance
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None
+        '''
+        pass
+
+
     #
     # loop
     #
@@ -171,154 +252,92 @@ class Watchdog():
         '''
         self._logger.debug("Watchdog: Starting")
 
-        # The message handler for any incoming messages
-        def _message_handler(item):
-            # If something fails, go to sleep - The join will then fail the test
-            _sleep_time = 0.1
+        _running = True
+        _keepalive_required_by = timestamp(offset=MAX_KEEPALIVE_INTERVAL // 2)
+        _timed_out_previous_keepalive = False
+        _keepalive_interval_exceeded = False
+        
+        while _running:
+            _frame = None
+            _msg_received = False
+            _process_keepalive = False
 
-
-        # Check the stop event
-        while not self.__stop_event.is_set():
-            # Catch everything to keep this running
             try:
-                #
-                # Tasks to be stopped
-                #
-                _task_list = list(self.__task_stop_dict.keys())
-                for _key in _task_list:
-                    # Update telemetry
-                    if _key == TELEMETRY_ENTRY:
-                        self.__task_stop_dict[_key]['scanned'] = timestamp()
-                        continue
+                # Wait for a message or the interval
+                _frame = self._queue.get_frame(
+                    block=True,
+                    timeout=self._interval
+                )
+                _msg_received = True
 
-                    _task: TaskType = self.__task_stop_dict[_key]
-                    self.logger.info(
-                        f"Watchdog: Task ({_key}): [id={_task.id}] " +
-                        "Stop has been requested"
+            except queue.Empty:
+                # Check if timestamp received within timeframe
+                if _keepalive_required_by < timestamp():
+
+                    # Have not received a keepalive within the timeframe
+                    if _timed_out_previous_keepalive:
+                        _keepalive_interval_exceeded = True
+                    else:
+                        # Need to perform keepalive processing
+                        _process_keepalive = True
+                        _timed_out_previous_keepalive = True
+
+            if _keepalive_interval_exceeded:
+                raise RuntimeError(
+                    "messages not being processed on watchdog queue"
+                )
+
+            if _process_keepalive:
+                # Should send a keep alive to make sure the Queue is OK
+                # If it fails will raise queue.Full
+                self._queue.put_keepalive()
+
+            if _msg_received:
+                if not isinstance(_frame, TaskQueue_Frame):
+                    raise TypeError(
+                        "Task Queue message format is incorrect"
                     )
-                    _task.stop()
 
-                    # Remove the key from all of the dicts
-                    if _key in self.__task_start_dict:
-                        del self.__task_start_dict[_key]
+                # Make sure the message type is valid
+                if _frame.message_type not in MessageType:
+                    raise AttributeError("Invalid message type in frame")
 
-                    if _key in self.__task_restart_dict:
-                        del self.__task_restart_dict[_key]
+                # The exit message
+                if _frame.message_type == MessageType.LISTENER_EXIT:
+                    # The listener exit message frame was received
+                    _running = False
+                    continue
 
-                    del self.__task_stop_dict[_key]
+                # A message was received - reset the keepalive info
+                _timed_out_previous_keepalive = False
+                _keepalive_required_by = timestamp(
+                    offset=MAX_KEEPALIVE_INTERVAL // 2
+                )
 
-                #
-                # Tasks to be started
-                #
-                _task_list = list(self.__task_start_dict.keys())
-                for _key in _task_list:
-                    # Update telemetry
-                    if _key == TELEMETRY_ENTRY:
-                        self.__task_start_dict[_key]['scanned'] = timestamp()
-                        continue
+                # Ignore 
+                if _frame.message_type == MessageType.DATA:
+                    # It's a data message
+                    _info = _frame.data
 
-                    _task: TaskType = self.__task_start_dict[_key]
-                    self.logger.info(
-                        f"Watchdog: Task ({_key}): Start has been requested"
-                    )
-                    _task.start()
+                    # Find the task and update it
+                    _task = None
+                    if "task_id" in _info:
+                        if _info["task_id"] in self._task_dict:
+                            _task = self._task_dict[_info["task_id"]]
 
-                    # Move the task to the restart dict
-                    self.__task_restart_dict[_key] = _task
-                    del self.__task_start_dict[_key]
+                    if isinstance(_task, TaskTask):
+                        if "status" in _info: self.status = _info["status"]
+                        if "return_value" in _info:
+                            self.return_value = _info["return_value"]
+                        if "exception_name" in _info:
+                            self.exception_name = _info["exception_name"]
+                        if "exception_desc" in _info:
+                            self.exception_desc = _info["exception_desc"]
+                        if "exception_stack" in _info:
+                            self.exception_stack = _info["exception_stack"]
 
-                #
-                # Tasks to be watched and restarted if necessary
-                #
-                _task_list = list(self.__task_restart_dict.keys())
-                for _key in _task_list:
-                    # Update telemetry
-                    if _key == TELEMETRY_ENTRY:
-                        self.__task_restart_dict[_key]['scanned'] = timestamp()
-                        continue
-
-                    _task: TaskType = self.__task_restart_dict[_key]
-
-                    _restart_task = False
-                    if _task.status != TaskStatus.RUNNING.value:
-                        _restart_task = True
-                        self.logger.warning(
-                            f"Watchdog: Task ({_key}: [id={_task.id}] " +
-                            f"{_task.name}) not running.  Status: " +
-                            f"{_task.status}"
-                        )
-
-                    elif not _task.is_alive:
-                        _restart_task = True
-                        self.logger.warning(
-                            f"Watchdog: Task ({_key}: [id={_task.id}] " +
-                            f"{_task.name}) not running.  Task not alive"
-                        )
-
-                    if _restart_task:
-                        _task.cleanup()
-                        _task.start()
-                        self.logger.info(
-                            f"Watchdog: Task ({_key}: {_task.name}) " +
-                            "restarted"
-                        )
-
-            except:
-                self.logger.error("Watchdog has failed", exc_info=True)
-
-            # Pause for the interval - Can be woken up if needed
-            if self.__interval_event.wait(timeout=interval):
-                # Got woken up - Reset the event
-                self.__interval_event.clear()
-
-
-        # Set all tasks to be stopped
-        self.logger.debug("Stopping registered tasks")
-
-        _task_list = list(self.__task_start_dict.keys())
-        for _key in _task_list:
-            # Update telemetry
-            if _key == TELEMETRY_ENTRY:
-                self.__task_start_dict[_key]['scanned'] = timestamp()
-                continue
-
-            _task: TaskType = self.__task_start_dict[_key]
-            self.logger.debug(f"Setting stop (start): {_task.name}")
-            self.__task_stop_dict[_key] = _task
-            del self.__task_start_dict[_key]
-
-        _task_list = list(self.__task_restart_dict.keys())
-        for _key in _task_list:
-            # Update telemetry
-            if _key == TELEMETRY_ENTRY:
-                self.__task_restart_dict[_key]['scanned'] = timestamp()
-                continue
-
-            _task: TaskType = self.__task_restart_dict[_key]
-            self.logger.debug(f"Setting stop (restart): {_task.name}")
-            self.__task_stop_dict[_key] = _task
-            del self.__task_restart_dict[_key]
-
-        _task_list = list(self.__task_stop_dict.keys())
-        for _key in _task_list:
-            # Update telemetry
-            if _key == TELEMETRY_ENTRY:
-                self.__task_stop_dict[_key]['scanned'] = timestamp()
-                continue
-
-            _task: TaskType = self.__task_stop_dict[_key]
-            self.logger.debug(f"Stopping: {_task.name}")
-            _task.stop()
-            del self.__task_stop_dict[_key]
-
-        # Indicate the shutdown is complete
-        self.logger.debug("Shutdown done")
-        self.__shutdown_event.set()
-
-        # Reset the events
-        self.__stop_event.clear()
-        self.__interval_event.clear()
-        self.logger.debug("Watchdog: Ending")
+            # Perform the watchdog maintenance tasks
+            self.maintenance()
 
 
     #
@@ -337,105 +356,44 @@ class Watchdog():
         Raises:
             None
         '''
-        self.logger.debug("Request to stop Watchdog")
+        self._logger.debug("Request to stop Watchdog")
 
-        # Set the events to exit the loop
-        self.__interval_event.set()
-        self.__stop_event.set()
-
-        # Let the watchdog stop
-        self.__shutdown_event.wait(timeout=WATCHDOG_SHUTDOWN_TIMEOUT)
+        # Send the quit message
+        self._queue.put_quit()
 
         # Join the watchdog thread to clean it up
-        for _thread in enumerate_threads():
-            if _thread.name == self.task_id:
-                self.logger.debug("Found Thread - Joining")
-                _thread.join(timeout=WATCHDOG_JOIN_TIMEOUT)
+        self._watchdog_thread.join(timeout=SHUTDOWN_TIMEOUT)
 
-        self.logger.debug("Request to stop Watchdog completed")
+        self._logger.debug("Request to stop Watchdog completed")
 
 
     ###########################################################################
     #
-    # Add/Remove tasks to watch
+    # The watchdog task list
     #
     ###########################################################################
     #
-    # register
+    # add_task
     #
-    def register(
-            self,
-            task: TaskType | None = None,
-            label: str = ""
-    ) -> str:
+    def add_task(self, task: TaskTask | None = None):
         '''
-        Register a task with the watchdog
+        Add a task to the watchdog list
 
         Args:
-            task (Task): An AppCore task to be watched
-            label (str): A label for the task within the watchdog.  If empty,
-                a UUID will be allocated.
-
-        Returns:
-            str: The label of the task in the watchdog
-
-        Raises:
-            AssertionError:
-                when a task is not provied
-        '''
-        assert isinstance(task, TaskType), \
-            "A task is required to register with the watchdog"
-        assert isinstance(label, str), "Label must be a string"
-
-        if self.__thread_only:
-            assert task.type == "thread", \
-                "Watchdog configured to only watch thread type tasks"
-
-        # If the label is empty, generate a uuid as a label
-        if not label: label = str(uuid.uuid4())
-
-        self.logger.debug(f"Registering Task: {label}")
-
-        # Add the entry to the start task dict
-        self.__task_start_dict[label] = task
-
-        # Don't wait for the watchdog interval - Do this immediately
-        self.__interval_event.set()
-
-        return label
-
-
-    #
-    # deregister
-    #
-    def deregister(
-            self,
-            label: str = ""
-    ):
-        '''
-        Register a task with the watchdog
-
-        Args:
-            label (str): The label for the task within the watchdog.
+            task (TaskTask): The task to be added
 
         Returns:
             None
 
         Raises:
-            None
+            AssertionError
+                When task is not valid
         '''
-        assert isinstance(label, str), "Label must be a string"
+        assert isinstance(task, TaskTask), "task must be of type TaskTask"
 
-        self.logger.debug(f"Deregistering Task: {label}")
-
-        # Set the task to be stopped
-        if label in self.__task_start_dict:
-            self.__task_stop_dict[label] = self.__task_start_dict[label]
-
-        elif label in self.__task_restart_dict:
-            self.__task_stop_dict[label] = self.__task_restart_dict[label]
-
-        self.__interval_event.set()
+        self._task_dict_lock.acquire()
+        self._task_dict[task.task_id] = task
+        self._task_dict_lock.release()
 
 
 ###########################################################################

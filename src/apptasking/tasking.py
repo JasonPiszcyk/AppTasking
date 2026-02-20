@@ -36,12 +36,13 @@ import multiprocessing.synchronize
 from applogging.logging import get_logger, init_console_logger
 
 # Local app modules
-from apptasking.task_wrapper import task_wrapper, get_default_task_info
+
 import apptasking.tasking_ipc as tasking_ipc
+from task_task import TaskTask
 
 # Imports for python variable type hints
-from typing import Callable, get_args
-from apptasking.typing import TaskType_Type, TaskStatus
+from typing import Callable, get_args, cast
+from apptasking.typing import TaskType_Type
 
 
 ###########################################################################
@@ -111,7 +112,6 @@ class Tasking():
 
         # Private Attributes
         self._task_type = task_type
-        self._context = multiprocessing.get_context(method="spawn")
 
         # Configure Logging
         if isinstance(logger_name, str) and logger_name:
@@ -249,12 +249,8 @@ class Tasking():
             start_func: Callable | None = None,
             start_kwargs: dict = {},
             stop_func: Callable | None = None,
-            stop_kwargs: dict = {},
-            store_results: bool = False,
-            start: bool = True,
-            watchdog: bool = False,
-            restart: bool = True
-    ) -> None:
+            stop_kwargs: dict = {}
+    ) -> TaskTask:
         '''
         Create a new task
 
@@ -266,17 +262,9 @@ class Tasking():
             stop_func (Callable): Function to run to stop the
                 thread/process
             stop_kwargs (dict): Arguments to pass the stop function
-            store_results (bool): If True, make the results of the start
-                function available upon completion
-            start (bool): If True, start the task after creating it
-            watchdog (bool): If True, add the task to the watchdog thread
-                to keep track of the task (auto restart, etc)
-            restart (bool): If task has been added to the watchdog, and
-                'restart' is True, an attempt will be made to restart the
-                task when it ends or fails.
 
         Returns:
-            Any: The value of the item
+            TaskTask - The task instance
 
         Raises:
             AssertionError:
@@ -299,61 +287,20 @@ class Tasking():
             f"Create task: {name} (Type={self._task_type})"
         )
 
-        # Create event to manage to the task lifecycle
-        _start_event = self.Event()
-        _stop_event = self.Event()
-
-        # Ensure the events are cleared
-        _start_event.clear()
-        _stop_event.clear()
-
-        # Create the task info dict
-        _info = get_default_task_info()
-
-        # self.__info["status"] = TaskStatus.RUNNING.value
-
-        # self.logger.debug(f"Start: Task Type = {self.__task_type}")
-
-        # Wrap the target functions to gather information
-        _kwargs = {
-            "start_func": start_func,
-            "start_kwargs": start_kwargs,
-            "start_event": _start_event,
-            "stop_event": _stop_event,
-            "logger_name": self._logger.name,
-        }
-
-        if self._task_type == "thread":
-            # Start the thread
-            _thread = threading.Thread(
-                target=task_wrapper,
-                kwargs=_kwargs,
-                name=name
-            )
-            _thread.start()
-            # self.__thread_id = _thread.native_id
-
-        elif self._task_type == "process":
-            _process = self._context.Process(               # type: ignore
-                target=task_wrapper,
-                kwargs=_kwargs,
-                name=name
-            )
-            _process.start()
-            # self.__process_id = _process.pid
-
-
-            # When the process/thread is started, wait for the event
-            # self.__start_event.wait(timeout=TASK_START_TIMEOUT)
-
-        else:
-            raise TypeError("task_type is invalid")
-
-        self._logger.debug(
-            f"Start: Task Started: {name} (Type={self._task_type})"
+        _task = TaskTask(
+            task_type=cast(TaskType_Type, self._task_type),
+            name = name,
+            start_func = start_func,
+            start_kwargs = start_kwargs,
+            stop_func = stop_func,
+            stop_kwargs = stop_kwargs,
+            logger_name=self._logger.name
         )
 
+        # Add to the watchdog
+        # self._watchdog
 
+        return _task
 
 
 ###########################################################################

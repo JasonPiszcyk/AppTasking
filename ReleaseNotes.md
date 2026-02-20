@@ -1,6 +1,7 @@
 # AppTasking
+
 ## Release Notes
 
+### Version 1.0.0
 
-__Version 1.0.0__
 * Initial Release
