@@ -304,6 +304,7 @@ class Tasking():
                 When start_kwargs is not a dict
                 When stop_func is not callable
                 When stop_kwargs is not a dict
+                when watchdog is not created
             TypeError:
                 When task_type is not valid
         '''
@@ -338,6 +339,43 @@ class Tasking():
             self._watchdog.add_task(task=_task)
 
         return _task
+
+
+    #
+    # delete
+    #
+    def delete(
+            self,
+            task_id: str = "",
+            stop: bool = True,
+            join_task: bool = True
+    ):
+        '''
+        Delete a task
+
+        Args:
+            task_id (str): ID of the task to be removed
+            stop (bool): If true, attempt to stop the task before removing
+            join_task: If True, join the task after running completion func
+
+        Returns:
+            None
+
+        Raises:
+            AssertionError:
+                when watchdog is not created
+        '''
+        assert isinstance(self._watchdog, watchdog.Watchdog), (
+            "watchdog must be instantiated before creating task"
+        )
+
+        # Remove task from the watchdog
+        if isinstance(self._watchdog, watchdog.Watchdog):
+            self._watchdog.remove_task(
+                task_id=task_id,
+                stop=stop,
+                join_task=join_task
+            )
 
 
 ###########################################################################

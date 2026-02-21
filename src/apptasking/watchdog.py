@@ -335,20 +335,21 @@ class Watchdog():
 
                     # Find the task and update it
                     _task = None
-                    if "task_id" in _info:
-                        if _info["task_id"] in self._task_dict:
-                            _task = self._task_dict[_info["task_id"]]
+                    if "id" in _info:
+                        if _info["id"] in self._task_dict:
+                            _task = self._task_dict[_info["id"]]
+
 
                     if isinstance(_task, TaskTask):
-                        if "status" in _info: self.status = _info["status"]
+                        if "status" in _info: _task.status = _info["status"]
                         if "return_value" in _info:
-                            self.return_value = _info["return_value"]
+                            _task.return_value = _info["return_value"]
                         if "exception_name" in _info:
-                            self.exception_name = _info["exception_name"]
+                            _task.exception_name = _info["exception_name"]
                         if "exception_desc" in _info:
-                            self.exception_desc = _info["exception_desc"]
+                            _task.exception_desc = _info["exception_desc"]
                         if "exception_stack" in _info:
-                            self.exception_stack = _info["exception_stack"]
+                            _task.exception_stack = _info["exception_stack"]
 
             # Perform the watchdog maintenance tasks
             self.maintenance()

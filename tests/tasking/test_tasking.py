@@ -33,6 +33,7 @@ import time
 
 # Local app modules
 from apptasking.tasking import Tasking
+from apptasking.typing import TaskStatus
 
 # Imports for python variable type hints
 from typing import Any, Final
@@ -112,11 +113,11 @@ class Test_Tasks():
     '''
 
     #
-    # Basic Tests - put then get
+    # Start a simple task then stop it
     #
     @pytest.mark.parametrize("task_type", TASK_TYPES)
     def test_task_simple(self, task_type):
-        ''' Start/stop a task '''
+        ''' Run task and stop it '''
         # Create a task manager
         _task_mgr = Tasking(task_type=task_type)
         
@@ -138,6 +139,104 @@ class Test_Tasks():
 
         # Stop the task
         _task.stop()
+
+
+    #
+    # Check the status of a successful task during it's lifecycle
+    #
+    @pytest.mark.parametrize("task_type", TASK_TYPES)
+    def test_task_status_complete(self, task_type):
+        ''' Run task, checking the status being set correctly '''
+        # Create a task manager
+        _task_mgr = Tasking(task_type=task_type)
+        
+        _kwargs = {
+            "test_event": _task_mgr.Event()
+        }
+
+        # Add a task
+        _task = _task_mgr.create(
+            name=f"Test Task - Status Complete ({task_type})",
+            start_func=simple_event_target,
+            start_kwargs=_kwargs,
+            stop_func=simple_event_stop,
+            stop_kwargs=_kwargs
+        )
+
+        assert _task.status == TaskStatus.NOT_STARTED.value
+
+        # Start the task
+        _task.start()
+        assert _task.status == TaskStatus.RUNNING.value
+
+        # Stop the task
+        _task.stop()
+        assert _task.status == TaskStatus.COMPLETED.value
+
+
+    #
+    # Check the status of a unsuccessful task during it's lifecycle
+    #
+    @pytest.mark.parametrize("task_type", TASK_TYPES)
+    def test_task_status_error(self, task_type):
+        ''' Run task, checking the status being set correctly '''
+        # Create a task manager
+        _task_mgr = Tasking(task_type=task_type)
+
+        # Add a task
+        _task = _task_mgr.create(
+            name=f"Test Task - Status Error ({task_type})",
+            start_func=error_event_target
+        )
+
+        assert _task.status == TaskStatus.NOT_STARTED.value
+
+        # Start the task
+        _task.start()
+
+        # Allow time for the task to start then fail
+        time.sleep(0.5)
+        assert _task.status == TaskStatus.ERROR.value
+
+        # Check the results
+        assert not _task.return_value
+        assert _task.exception_name == str(EXCEPTION.__name__)
+        assert _task.exception_desc == EXCEPTION_DESC
+        assert str(_task.exception_stack).find(
+                f"{EXCEPTION.__name__}: {EXCEPTION_DESC}") >= 0
+
+
+    #
+    # Check the return value from a task
+    #
+    @pytest.mark.parametrize("task_type", TASK_TYPES)
+    def test_task_check_return_value(self, task_type):
+        ''' Run a task that ends itself and returns a value '''
+        # Create a task manager
+        _task_mgr = Tasking(task_type=task_type)
+
+        # Add a task
+        _task = _task_mgr.create(
+            name=f"Test Task - Check Return Value ({task_type})",
+            start_func=short_lived_event_target
+        )
+
+        assert _task.status == TaskStatus.NOT_STARTED.value
+
+        # Start the task
+        _task.start()
+        time.sleep(0.5)
+
+        # What for the task to complete
+        while _task.status == TaskStatus.RUNNING.value:
+            time.sleep(0.1)
+
+        # Check the results
+        assert _task.status == TaskStatus.COMPLETED.value
+        assert _task.return_value == SHORT_LIVED_RETURN
+
+        # Remove the task
+        _task_mgr.delete(task_id=_task.task_id)
 
 
 ###########################################################################
