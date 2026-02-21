@@ -36,9 +36,9 @@ import multiprocessing.synchronize
 from applogging.logging import get_logger, init_console_logger
 
 # Local app modules
-
+import apptasking.watchdog as watchdog
 import apptasking.tasking_ipc as tasking_ipc
-from task_task import TaskTask
+from apptasking.task_task import TaskTask
 
 # Imports for python variable type hints
 from typing import Callable, get_args, cast
@@ -83,6 +83,7 @@ class Tasking():
     def __init__(
             self,
             task_type: TaskType_Type = "thread",
+            watchdog_interval: float = watchdog.DEFAULT_CHECK_INTERVAL,
             logger_name: str = "",
             logger_level: str = "CRITICAL"
     ):
@@ -92,6 +93,8 @@ class Tasking():
         Args:
             task_type (str): The type of task ("thread", "process")
                 to be created and managed by this instance
+            watchdog_interval (float): How often (in seconds) the watchdog
+                wakes up and checks on tasks
             logger_name (str): The name of the logger to use.  If empty (or
                 not a string) then a logger will be created to log to the
                 console
@@ -112,6 +115,11 @@ class Tasking():
 
         # Private Attributes
         self._task_type = task_type
+        self._watchdog = watchdog.Watchdog(
+            name=f"Watchdog ({task_type})",
+            interval=watchdog_interval,
+            logger_name=logger_name
+        )
 
         # Configure Logging
         if isinstance(logger_name, str) and logger_name:
@@ -120,6 +128,30 @@ class Tasking():
         else:
             self._logger = init_console_logger(name=DEFAULT_LOGGER_NAME)
             self._logger.setLevel(level=logger_level)
+
+
+    #
+    # __del__
+    #
+    def __del__(self):
+        '''
+        Called when instance is destroyed
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None
+        '''
+        # Cleanup the watchdog
+        if isinstance(self._watchdog, watchdog.Watchdog):
+            self._watchdog.cleanup(nowait=False)
+
+        del self._watchdog
+        self._watchdog = None
 
 
     ###########################################################################
@@ -282,6 +314,9 @@ class Tasking():
             "stop_func must be a callable, or None"
         )
         assert isinstance(stop_kwargs, dict), "stop_kwargs must be a dict"
+        assert isinstance(self._watchdog, watchdog.Watchdog), (
+            "watchdog must be instantiated before creating task"
+        )
 
         self._logger.debug(
             f"Create task: {name} (Type={self._task_type})"
@@ -289,6 +324,7 @@ class Tasking():
 
         _task = TaskTask(
             task_type=cast(TaskType_Type, self._task_type),
+            watchdog_queue=self._watchdog.queue,
             name = name,
             start_func = start_func,
             start_kwargs = start_kwargs,
@@ -298,7 +334,8 @@ class Tasking():
         )
 
         # Add to the watchdog
-        # self._watchdog
+        if isinstance(self._watchdog, watchdog.Watchdog):
+            self._watchdog.add_task(task=_task)
 
         return _task
 

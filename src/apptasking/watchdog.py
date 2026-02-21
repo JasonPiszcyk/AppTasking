@@ -43,7 +43,7 @@ from apptasking.task_queue import (
     MessageType,
     MAX_KEEPALIVE_INTERVAL
 )
-from task_task import TaskTask
+from apptasking.task_task import TaskTask
 import apptasking.tasking_ipc as tasking_ipc
 
 # Imports for python variable type hints
@@ -96,6 +96,7 @@ class Watchdog():
     #
     def __init__(
             self,
+            name: str = "watchdog",
             interval: float = DEFAULT_CHECK_INTERVAL,
             logger_name: str = ""
     ):
@@ -103,6 +104,7 @@ class Watchdog():
         Initialises the instance.
 
         Args:
+            name (str): Name for the watchdog thread
             interval (float): How often the watchdog (in seconds) wakes up
                 and checks tasks
             logger_name (str): The name of the logger to use.
@@ -142,7 +144,7 @@ class Watchdog():
         self._watchdog_thread = threading.Thread(
             target=self.loop,
             kwargs={},
-            name=f"Watchdog ()"
+            name=name
         )
         self._watchdog_thread.start()
 
@@ -167,7 +169,7 @@ class Watchdog():
         Raises:
             None
         '''
-        self.cleanup()
+        self.cleanup(nowait=True)
 
 
     ###########################################################################
@@ -192,12 +194,12 @@ class Watchdog():
     #
     # cleanup
     #
-    def cleanup(self):
+    def cleanup(self, nowait: bool = False):
         '''
         Perform any shutdown of the watchdog
 
         Args:
-            None
+            nowait (bool): If true, just cleanup without waiting for joins
 
         Returns:
             None
@@ -205,9 +207,15 @@ class Watchdog():
         Raises:
             None
         '''
-        # Clean up the thread
+        # Clean up the watchdog thread
         if isinstance(self._watchdog_thread, threading.Thread):
-            pass
+            # Stop the watchdog loop
+            self.loop_stop()
+
+        # Ensure stop is sent to all tasks
+        _task_list = list(self._task_dict.values())
+        for _task in _task_list:
+            _task.stop(join_task=not nowait)
 
 
     ###########################################################################
@@ -231,7 +239,13 @@ class Watchdog():
         Raises:
             None
         '''
-        pass
+        # Restart any task that need to be restarted
+        for _task in self._task_dict.values():
+            if not _task.restart: continue
+
+            # Is the task active?
+            if not _task.is_alive:
+                _task.start()
 
 
     #
@@ -394,6 +408,47 @@ class Watchdog():
         self._task_dict_lock.acquire()
         self._task_dict[task.task_id] = task
         self._task_dict_lock.release()
+
+
+    #
+    # remove_task
+    #
+    def remove_task(self,
+            task_id: str = "",
+            stop: bool = True,
+            join_task: bool = True
+    ):
+        '''
+        Remove a task from the watchdog list
+
+        Args:
+            task_id (str): ID of the task to be removed
+            stop (bool): If true, attempt to stop the task before removing
+            join_task: If True, join the task after running completion func
+
+        Returns:
+            None
+
+        Raises:
+            AssertionError
+                When task is cannot be found
+        '''
+        assert isinstance(task_id, str), "task_id must be a string"
+
+        self._task_dict_lock.acquire()
+
+        _task = None
+
+        # Delete the task from the dict
+        if "task_id" in self._task_dict:
+            _task = self._task_dict[task_id]
+            del self._task_dict[task_id]
+
+        self._task_dict_lock.release()
+
+        if stop:
+            if isinstance(_task, TaskTask):
+                _task.stop(join_task=join_task)
 
 
 ###########################################################################

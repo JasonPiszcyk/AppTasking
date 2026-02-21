@@ -41,9 +41,8 @@ from apptasking.task_wrapper import task_wrapper
 import apptasking.tasking_ipc as tasking_ipc
 
 # Imports for python variable type hints
-from typing import Any, Callable, get_args
+from typing import Callable, get_args
 from apptasking.typing import TaskType_Type, TaskStatus
-from logging import Logger as LoggerType
 
 
 ###########################################################################
@@ -82,6 +81,8 @@ class TaskTask():
     Attributes:
         task_id (str) [ReadOnly]: ID of the task
         task_type (str) [ReadOnly]: The type of task ("thread", "process")
+        is_alive (bool) [ReadOnly]: True if the task is alive, false otherwise
+        restart (bool): If True restart the task, if it exits
         status (TaskStatus): Status of the task
         return_value (Any): Value return from the task
         exception_name (str): If error occurred, contains name
@@ -101,6 +102,7 @@ class TaskTask():
             start_kwargs: dict = {},
             stop_func: Callable | None = None,
             stop_kwargs: dict = {},
+            restart: bool = False,
             logger_name: str = ""
     ):
         '''
@@ -117,6 +119,7 @@ class TaskTask():
             stop_func (Callable): Function to run to stop the
                 thread/process
             stop_kwargs (dict): Arguments to pass the stop function
+            restart (bool): If True restart the task, if it exits
             logger_name (str): The name of the logger to use.
 
         Returns:
@@ -164,6 +167,7 @@ class TaskTask():
             self._logger.setLevel(level="CRITICAL")
 
         # Attributes
+        self.restart = restart
         self.status = TaskStatus.NOT_STARTED.value
         self.return_value = None
         self.exception_name = ""
@@ -194,6 +198,26 @@ class TaskTask():
         return self._task_type
 
 
+    #
+    # is_alive
+    #
+    @property
+    def is_alive(self) -> bool:
+        ''' Return if the task is alive '''
+        if self._task_type == "thread":
+            if isinstance(self._thread, threading.Thread):
+                return self._thread.is_alive()
+
+        elif self._task_type == "process":
+            if isinstance(
+                    self._process,
+                    multiprocessing.context.SpawnProcess
+            ):
+                return self._process.is_alive()
+
+        return False
+
+
     ###########################################################################
     #
     # Task Start/Stop
@@ -213,7 +237,8 @@ class TaskTask():
             None
 
         Raises:
-            None
+            TypeError:
+                When the task type is invalid
         '''
         self._logger.debug(f"Starting task: f{self._name}")
 
@@ -260,23 +285,50 @@ class TaskTask():
     #
     # stop
     #
-    def stop(self):
+    def stop(self, join_task: bool = True):
         '''
         Stop the task
 
         Args:
-            None
+            join_task: If True, join the task after running completion func
         
         Returns:
             None
 
         Raises:
-            AssertionError
-                When message type is not valid
-                When block is not bool
-                When timeout is not a positive float, 0 or None
+            TypeError:
+                When the task type is invalid
         '''
         self._logger.debug(f"Stopping task: f{self._name}")
+
+        # Call the stop function
+        if callable(self._stop_func):
+            self._stop_func(**self._stop_kwargs)
+
+        if join_task:
+            if self._task_type == "thread":
+                if isinstance(self._thread, threading.Thread):
+                    self._thread.join(TASK_STOP_TIMEOUT)
+                else:
+                    self._logger.debug(f"Unable to find thread info")
+
+                self._thread = None
+
+            elif self._task_type == "process":
+                if isinstance(
+                        self._process,
+                        multiprocessing.context.SpawnProcess
+                ):
+                    self._process.join(TASK_STOP_TIMEOUT)
+                else:
+                    self._logger.debug(f"Unable to find process info")
+
+                self._process = None
+
+            else:
+                raise TypeError("task_type is invalid")
+
+        self._logger.debug(f"Task stopped: f{self._name}")
 
 
 ###########################################################################

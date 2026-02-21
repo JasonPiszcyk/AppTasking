@@ -40,7 +40,10 @@ suitability for any particular purpose.
 #
 # Constants
 #
-# Different data type to try out
+# Task Type
+TASK_TYPES = [ "process", "thread" ]
+
+# Different data types to try out
 DATA_SET = {
     "String": { "type": str, "value": "A string to be stored in shared mem" },
     "Integer": { "type": int, "value": 100 },
